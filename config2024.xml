@@ -1,0 +1,23 @@
+<Configuration>
+  <!-- Instalación de Office LTSC Professional Plus 2024 (64 bits) -->
+  <Add OfficeClientEdition="64" Channel="PerpetualVL2024">
+    <Product ID="ProPlus2024Volume">
+      <Language ID="es-es" />
+      
+      <!-- Exclusiones para entorno de laboratorio -->
+      <ExcludeApp ID="Access" />
+      <ExcludeApp ID="Publisher" />
+      <ExcludeApp ID="Teams" />
+      <ExcludeApp ID="OneDrive" />
+      <ExcludeApp ID="Bing" />
+      <ExcludeApp ID="Lync" />
+    </Product>
+  </Add>
+  
+  <RemoveMSI />
+  <Display Level="None" AcceptEULA="TRUE" />
+  <Property Name="AUTOACTIVATE" Value="0" />
+  <Property Name="FORCEAPPSHUTDOWN" Value="TRUE" />
+  <Property Name="SharedComputerLicensing" Value="0" />
+  <Updates Enabled="FALSE" />
+</Configuration>
