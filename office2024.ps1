@@ -1,20 +1,17 @@
 # ==============================================================================
-# PROTECH SOLUTIONS S.A.S - ENTERPRISE DEPLOYMENT ENGINE v10.1 (GOLD EDITION)
+# PROTECH SOLUTIONS S.A.S - ENTERPRISE DEPLOYMENT ENGINE v10.2
 # Desarrollado por: Ing. Juan Pablo Ante
-# Estándar: Resiliencia Senior, Logging Estructurado y Seguridad Fall-Safe
+# Novedad v10.2: Módulo de Barrido Preventivo y Asesino de Procesos (Ghost Scrubber)
 # ==============================================================================
 
-# --- 1. CONFIGURACIÓN DE LOGGING (Caja Negra) ---
 $LogPath = "$env:TEMP\ProTech_Office_Deploy.log"
 Start-Transcript -Path $LogPath -Append
 
-# --- 2. VARIABLES DE INFRAESTRUCTURA ---
 $RepoUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main"
 $TempDir = "C:\ProTechDeploy"
-$ModoDesatendido = $false # Cambiar a $true si deseas que el cliente NO vea nada
+$ModoDesatendido = $false
 
-# --- 3. MÓDULOS DE INGENIERÍA ---
-
+# --- MÓDULOS ---
 function Set-SecurityShields ($State) {
     try {
         if ($State -eq "OFF") {
@@ -45,26 +42,17 @@ function Get-RemoteFile {
     if (-not $Success) { throw "Fallo critico de red tras $MaxRetries intentos." }
 }
 
-function Test-OfficeConflict {
-    Write-Host "[*] Escaneando registros por conflictos de coexistencia..." -ForegroundColor Cyan
-    $C2R = Test-Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration"
-    $Legacy = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*Microsoft Office*" }
-    if ($C2R -or $Legacy) { return $true } else { return $false }
-}
-
-# --- 4. PROCESO MAESTRO (TRY-CATCH-FINALLY) ---
+# --- PROCESO MAESTRO ---
 try {
-    # Validaciones de Inicio
     if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw "Se requieren privilegios de Administrador para este despliegue."
     }
 
     Set-SecurityShields -State "OFF"
 
-    # UI de Selección
     Clear-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "       PROTECH SOLUTIONS S.A.S - ENGINE v10.1             " -ForegroundColor Cyan
+    Write-Host "       PROTECH SOLUTIONS S.A.S - ENGINE v10.2             " -ForegroundColor Cyan
     Write-Host "       LOG: $LogPath" -ForegroundColor Gray
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "1. Instalar Office LTSC 2024 (Recomendado)"
@@ -76,35 +64,29 @@ try {
     $ProdID = if ($Opcion -eq "2") { "ProPlus2021Volume" } else { "ProPlus2024Volume" }
     $Channel = if ($Opcion -eq "2") { "PerpetualVL2021" } else { "PerpetualVL2024" }
 
-    # 3. Verificación y Purga de Conflictos (REVISADO PARA EVITAR ERROR 0-2048)
-    if (Test-OfficeConflict) {
-        Write-Host "[!] ALERTA: Se detecto una instalacion previa de Office." -ForegroundColor Yellow
-        $Confirm = Read-Host "¿Deseas ejecutar desinstalacion forzada antes de continuar? (S/N)"
-        if ($Confirm -eq 'S' -or $Confirm -eq 's') {
-            if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | Out-Null }
-            
-            Write-Host "[*] Descargando motor para desinstalacion..." -ForegroundColor Cyan
-            Get-RemoteFile -Url "$RepoUrl/setup.exe" -Dest "$TempDir\setup.exe"
-            
-            $UnXmlPath = "$TempDir\uninstall.xml"
-            $UnXmlContent = "<Configuration><Remove All='TRUE'></Remove><Display Level='Full' AcceptEULA='TRUE' /></Configuration>"
-            $UnXmlContent | Out-File -FilePath $UnXmlPath -Encoding ascii -Force
-
-            Write-Host "[*] Ejecutando purga completa. Por favor espera..." -ForegroundColor Yellow
-            # Se usa ruta absoluta entre comillas para corregir el error 0-2048
-            $procUn = Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"$UnXmlPath`"" -Wait -PassThru
-            
-            if ($procUn.ExitCode -eq 0) {
-                Write-Host "[OK] Purga completada exitosamente." -ForegroundColor Green
-            }
-        }
-    }
-
-    # Preparación de Instalación
-    if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory | Out-Null }
+    # Preparación de Directorio
+    if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | Out-Null }
     Set-Location $TempDir
     Get-RemoteFile -Url "$RepoUrl/setup.exe" -Dest "setup.exe"
 
+    # --- NUEVO: BARRIDO PREVENTIVO DE FANTASMAS ---
+    Write-Host "[*] Ejecutando barrido preventivo de procesos atascados..." -ForegroundColor Magenta
+    Get-Process "OfficeClickToRun", "setup" -ErrorAction SilentlyContinue | Stop-Process -Force
+    
+    Write-Host "[*] Esterilizando rastros de instalaciones previas..." -ForegroundColor Magenta
+    $PreScrubPath = "$TempDir\prescrub.xml"
+    $PreScrubXml = "<Configuration><RemoveMSI /><Remove All='TRUE' /><Display Level='None' AcceptEULA='TRUE' /></Configuration>"
+    $PreScrubXml | Out-File -FilePath $PreScrubPath -Encoding ascii -Force
+    
+    # Se ejecuta de forma 100% silenciosa (Level='None'). No importa si da error interno porque no hay nada.
+    Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure `"$PreScrubPath`"" -Wait
+    
+    # Aseguramos que el servicio haya muerto tras la limpieza
+    Start-Sleep -Seconds 3
+    Get-Process "OfficeClickToRun", "setup" -ErrorAction SilentlyContinue | Stop-Process -Force
+    # ----------------------------------------------
+
+    # Generar XML de Instalación
     $DisplayLvl = if ($ModoDesatendido) { "None" } else { "Full" }
     $ConfigXml = @"
 <Configuration>
@@ -116,27 +98,23 @@ try {
 "@
     $ConfigXml | Out-File "config.xml" -Encoding ascii
 
-    Write-Host "[*] Lanzando motor de instalacion Office $VerName..." -ForegroundColor Yellow
-    Write-Host "Veras la ventana de progreso oficial de Microsoft." -ForegroundColor White
+    Write-Host "[*] Lanzando motor de instalacion Office $VerName limpia..." -ForegroundColor Yellow
     $process = Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure config.xml" -Wait -PassThru
 
     if ($process.ExitCode -ne 0) { throw "Error en instalador de Office. Codigo: $($process.ExitCode)" }
 
-    # Activación
     Write-Host "[*] Aplicando activacion permanente (Ohook)..." -ForegroundColor Cyan
     iex "& { $(irm https://get.activated.win) } /ohook"
 
 } catch {
     Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red
 } finally {
-    # BLOQUE DE CIERRE GARANTIZADO (Siempre reactiva seguridad y limpia)
     Set-SecurityShields -State "ON"
     Write-Host "`n[*] Limpiando entorno..." -ForegroundColor Gray
     Set-Location C:\
     Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
     Stop-Transcript
 
-    # FIRMA E IDENTIDAD CORPORATIVA
     Write-Host "`n==========================================================" -ForegroundColor Cyan
     Write-Host "      PROTECH SOLUTIONS S.A.S - DESPLIEGUE EXITOSO        " -ForegroundColor Cyan
     Write-Host "==========================================================" -ForegroundColor Cyan
