@@ -18,3 +18,31 @@ irm https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main
 Detener proteccion en tiempo real
 
 Set-MpPreference -DisableRealtimeMonitoring $true
+
+
+eliminar totalmente la instalacion de offie 
+
+# --- Script de Purga ProTech Solutions ---
+$TempDir = "C:\ProTechDeploy"
+Set-Location $TempDir
+
+Write-Host "-> Iniciando desinstalacion forzada de Office..." -ForegroundColor Cyan
+
+# Creamos un archivo XML temporal para la desinstalacion
+$UninstallXml = @"
+<Configuration>
+  <Remove All="TRUE">
+  </Remove>
+  <Display Level="Full" AcceptEULA="TRUE" />
+</Configuration>
+"@
+$UninstallXml | Out-File "$TempDir\uninstall.xml" -Encoding ascii
+
+# Ejecutamos el comando de remocion
+Write-Host "-> Ejecutando proceso de limpieza. Por favor espera..." -ForegroundColor Yellow
+Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure uninstall.xml" -Wait
+
+Write-Host "-> Office ha sido removido. Reiniciando servicios de seguridad..." -ForegroundColor Green
+Set-MpPreference -DisableRealtimeMonitoring $false
+
+Write-Host "¡Limpieza completada! Ya puedes ejecutar la prueba final." -ForegroundColor White
