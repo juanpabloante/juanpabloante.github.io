@@ -11,4 +11,4 @@ irm [https://juanpabloante.github.io/office.ps1](https://juanpabloante.github.io
 
 **👉 Desplegar Office LTSC 2024 utlima version (Estable/Ligero):**
 
-irm [https://juanpabloante.github.io/office2024.ps1](https://juanpabloante.github.io/office2024.ps1) | iex
+irm https://juanpabloante.github.io/office2024.ps1 | iex
