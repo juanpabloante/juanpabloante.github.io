@@ -1,47 +1,70 @@
-# --- Motor de Despliegue ProTech Solutions v5.0 ---
-# Ajustes: Telemetría visual, Auto-Defender y Bypass de CDN
+# --- Motor de Despliegue ProTech Solutions v6.0 (Professional Edition) ---
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$RepoUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main"
+$TempDir = "C:\ProTechDeploy"
 
-# 1. Elevación y Auto-Desactivación de Defender
+# 1. Elevación y Seguridad
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "[X] Error: Ejecuta PowerShell como Administrador."
     return
 }
-Write-Host "-> Optimizando seguridad del sistema para el despliegue..." -ForegroundColor Cyan
 Set-MpPreference -DisableRealtimeMonitoring $true
 
-# 2. Configuración de Rutas
-$RepoUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main"
-$TempDir = "C:\ProTechDeploy"
+# 2. VERIFICACIÓN DE INSTALACIONES PREVIAS
+Write-Host "[*] Verificando rastro de instalaciones previas de Office..." -ForegroundColor Cyan
+$ExistingOffice = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*Microsoft Office*" }
 
-if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
-New-Item -Path $TempDir -ItemType Directory | Out-Null
+if ($ExistingOffice) {
+    Write-Host "[!] Se detecto una version previa: $($ExistingOffice.DisplayName)" -ForegroundColor Yellow
+    $Confirm = Read-Host "¿Deseas DESINSTALAR la version actual antes de proceder? (S/N)"
+    if ($Confirm -eq 'S' -or $Confirm -eq 's') {
+        Write-Host "-> Iniciando purga de Office existente..." -ForegroundColor Yellow
+        # Descargamos el motor de instalacion para usarlo como desinstalador
+        if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory | Out-Null }
+        curl.exe -s -L -o "$TempDir\setup.exe" "$RepoUrl/setup.exe"
+        
+        $UninstallXml = "<Configuration><Remove All='TRUE'></Remove><Display Level='Full' AcceptEULA='TRUE' /></Configuration>"
+        $UninstallXml | Out-File "$TempDir\uninstall.xml" -Encoding ascii
+        
+        Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure uninstall.xml" -Wait
+        Write-Host "[OK] Proceso de desinstalacion finalizado." -ForegroundColor Green
+    }
+} else {
+    Write-Host "[*] No se detectaron versiones previas. Procediendo con instalacion limpia..." -ForegroundColor Green
+}
+
+# 3. PREPARACIÓN DE INSTALACIÓN NUEVA
+if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory | Out-Null }
 Set-Location $TempDir
 
-# 3. Descarga de Componentes
-Write-Host "-> Obteniendo motor y configuracion desde repositorio privado..." -ForegroundColor Cyan
-Invoke-WebRequest -Uri "$RepoUrl/setup.exe" -OutFile "setup.exe" -UseBasicParsing
-Invoke-WebRequest -Uri "$RepoUrl/config2024.xml" -OutFile "config.xml" -UseBasicParsing
+Write-Host "[*] Descargando componentes de Office LTSC 2024..." -ForegroundColor Cyan
+curl.exe -s -L -o "setup.exe" "$RepoUrl/setup.exe"
 
-# 4. Validación de Integridad
-if ((Get-Item "setup.exe").Length -lt 1000000) {
-    Write-Host "[X] ERROR CRITICO: El motor no se descargo correctamente." -ForegroundColor Red
-    return
-}
+# Creamos un XML Dinámico en el momento para FORZAR la barra de progreso (Display Level Full)
+$ConfigXml = @"
+<Configuration>
+  <Add OfficeClientEdition="64" Channel="PerpetualVL2024">
+    <Product ID="ProPlus2024Volume" PIDKEY="2TDPW-NDQ7G-FBYDR-DQG6W-TV6DQ">
+      <Language ID="es-es" />
+    </Product>
+  </Add>
+  <Display Level="Full" AcceptEULA="TRUE" />
+  <Property Name="AUTOACTIVATE" Value="1" />
+</Configuration>
+"@
+$ConfigXml | Out-File "$TempDir\config.xml" -Encoding ascii
 
-# 5. Instalación con Barra de Progreso Visual
-Write-Host "-> Iniciando instalacion de Office LTSC 2024..." -ForegroundColor Yellow
-Write-Host "Podras ver el progreso en la ventana emergente de Office." -ForegroundColor White
-
-# Eliminamos el modo "None" interno del XML y forzamos visualizacion mediante el comando
+# 4. EJECUCIÓN CON TELEMETRÍA VISUAL
+Write-Host "[*] Iniciando Instalacion. VERAS UNA VENTANA CON EL PROGRESO REAL..." -ForegroundColor Yellow
 $process = Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure config.xml" -Wait -PassThru
 
-# 6. Activación Final
+# 5. ACTIVACIÓN
 if ($process.ExitCode -eq 0) {
-    Write-Host "-> Instalacion exitosa. Iniciando activacion (Ohook)..." -ForegroundColor Green
+    Write-Host "[OK] Office instalado. Iniciando activacion permanente..." -ForegroundColor Green
     iex "& { $(irm https://get.activated.win) } /ohook"
-    Write-Host "¡DESPLIEGUE FINALIZADO EXITOSAMENTE!" -ForegroundColor Green
+    Write-Host "¡TODO EL PROCESO HA FINALIZADO CON EXITO!" -ForegroundColor Green
 } else {
-    Write-Host "[X] El proceso se detuvo con codigo: $($process.ExitCode)" -ForegroundColor Red
+    Write-Host "[X] Error en la instalacion. Codigo: $($process.ExitCode)" -ForegroundColor Red
 }
 
-Read-Host "Presiona Enter para finalizar..."
+Read-Host "Presiona Enter para cerrar el laboratorio..."
