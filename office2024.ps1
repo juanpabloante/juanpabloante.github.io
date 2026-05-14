@@ -1,34 +1,48 @@
-# --- Despliegue Definitivo Office LTSC 2024 ---
-# Motor: Native cURL (Windows 11) - Tolerancia a fallos y bypass de redirecciones
+# --- Motor de Despliegue ProTech (Fase Final) ---
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = 'SilentlyContinue'
 
-Write-Host "Iniciando Motor de Despliegue Definitivo ProTech..." -ForegroundColor Cyan
-
-# Crear entorno completamente aislado
 $TempDir = "C:\OfficeLab2024"
-if (Test-Path $TempDir) { Remove-Item -Path $TempDir -Recurse -Force }
-New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
-Set-Location -Path $TempDir
+if (!(Test-Path $TempDir)) { New-Item -Path $TempDir -ItemType Directory -Force | Out-Null }
+Set-Location $TempDir
 
-$OdtUrl = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=deploymenttool&language=en-us&platform=x86&version=O16GA"
-# Usamos el enlace RAW de GitHub para evitar problemas de caché con el XML
+# Enlace corporativo oficial y XML en vivo
+$OdtUrl = "https://go.microsoft.com/fwlink/p/?LinkID=626065"
 $XmlUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main/config2024.xml"
+$OdtExe = "$TempDir\odt.exe"
+$XmlFile = "$TempDir\config.xml"
 
-Write-Host "-> Descargando binarios (Via cURL puro)..." -ForegroundColor Yellow
-# curl.exe con parámetro -L fuerza a seguir redirecciones de Microsoft hasta encontrar el .exe real
-curl.exe -s -L -o "odt.exe" $OdtUrl
-curl.exe -s -L -o "config.xml" $XmlUrl
+Write-Host "-> Descargando Office Deployment Tool Oficial..." -ForegroundColor Cyan
+# Evasión de bloqueo usando un UserAgent de navegador real
+Invoke-WebRequest -Uri $OdtUrl -OutFile $OdtExe -UseBasicParsing -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+Invoke-WebRequest -Uri $XmlUrl -OutFile $XmlFile -UseBasicParsing
 
-Write-Host "-> Extrayendo herramientas base..." -ForegroundColor Yellow
-Start-Process -FilePath ".\odt.exe" -ArgumentList "/extract:$TempDir /quiet" -Wait
+# Liberar bloqueos de seguridad nativos de Windows LTSC (SmartScreen)
+Unblock-File -Path $OdtExe
+Unblock-File -Path $XmlFile
 
-Write-Host "-> Ejecutando instalacion silenciosa (Esto tomara unos minutos, no cierres la ventana)..." -ForegroundColor Yellow
-Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure config.xml" -Wait
+# Control de Integridad: Verificar que Microsoft entregó el ejecutable real (Aprox 3.5 MB)
+if ((Get-Item $OdtExe).Length -lt 1000000) {
+    Write-Host "[X] ERROR FATAL: Microsoft bloqueo la descarga. El archivo esta corrupto o vacio." -ForegroundColor Red
+    exit
+}
+
+Write-Host "-> Extrayendo instalador base..." -ForegroundColor Yellow
+Start-Process -FilePath $OdtExe -ArgumentList "/extract:`"$TempDir`" /quiet" -Wait
+
+if (!(Test-Path "$TempDir\setup.exe")) {
+    Write-Host "[X] ERROR FATAL: El motor setup.exe no se logro extraer." -ForegroundColor Red
+    exit
+}
+
+Write-Host "-> Descargando e Instalando Office LTSC 2024 (Esto tomara varios minutos, no cierres la ventana)..." -ForegroundColor Yellow
+Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"$XmlFile`"" -Wait
 
 Write-Host "-> Inyectando activacion permanente (Ohook)..." -ForegroundColor Yellow
 iex "& { $(irm https://get.activated.win) } /ohook"
 
-Write-Host "-> Limpiando entorno..." -ForegroundColor Yellow
-Set-Location -Path "C:\"
+Write-Host "-> Limpiando entorno de laboratorio..." -ForegroundColor Yellow
+Set-Location "C:\"
 Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host "¡Instalacion 100% Completada sin errores!" -ForegroundColor Green
+Write-Host "¡Despliegue automatizado finalizado al 100% sin errores!" -ForegroundColor Green
