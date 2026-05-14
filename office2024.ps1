@@ -1,44 +1,39 @@
-# --- Motor de Despliegue ProTech (A Prueba de Fallos) ---
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$ProgressPreference = 'SilentlyContinue'
+# --- Configuración de Entorno ProTech ---
+$RepoUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main"
+$TempDir = "C:\ProTechDeploy"
 
-$TempDir = "C:\OfficeLab2024"
-if (!(Test-Path $TempDir)) { New-Item -Path $TempDir -ItemType Directory -Force | Out-Null }
+# 1. Crear carpeta temporal limpia
+if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
+New-Item -Path $TempDir -ItemType Directory | Out-Null
 Set-Location $TempDir
 
-$OdtUrl = "https://go.microsoft.com/fwlink/p/?LinkID=626065"
-$XmlUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main/config2024.xml"
+Write-Host "-> Descargando motor de instalación desde tu GitHub..." -ForegroundColor Cyan
+# Descarga el setup.exe que acabas de subir
+Invoke-WebRequest -Uri "$RepoUrl/setup.exe" -OutFile "setup.exe" -UseBasicParsing
 
-Write-Host "-> Descargando herramientas de despliegue Microsoft..." -ForegroundColor Cyan
-# Usamos curl nativo de Windows con seguimiento de redirecciones y evasión de certificados
-curl.exe -s -L -A "Mozilla/5.0" --ssl-no-revoke -o odt.exe $OdtUrl
-curl.exe -s -L -A "Mozilla/5.0" --ssl-no-revoke -o config.xml $XmlUrl
+Write-Host "-> Obteniendo archivo de configuración XML..." -ForegroundColor Cyan
+# Descarga tu configuración de Office 2024
+Invoke-WebRequest -Uri "$RepoUrl/config2024.xml" -OutFile "config.xml" -UseBasicParsing
 
-# Control de Integridad con Pausa (No cerrará la ventana)
-if ((Get-Item "odt.exe").Length -lt 1000000) {
-    Write-Host "[X] ERROR: Microsoft bloqueo la descarga (Tamano descargado: $((Get-Item 'odt.exe').Length) bytes)." -ForegroundColor Red
-    Read-Host "Presiona Enter para abortar sin cerrar la ventana..."
+# 2. Validación de descarga
+if ((Get-Item "setup.exe").Length -lt 1000000) {
+    Write-Host "[X] ERROR: El archivo setup.exe se descargó mal o está incompleto." -ForegroundColor Red
     return
 }
 
-Write-Host "-> Extrayendo instalador base..." -ForegroundColor Yellow
-Start-Process -FilePath ".\odt.exe" -ArgumentList "/extract:`"$TempDir`" /quiet" -Wait
+Write-Host "-> Iniciando instalación silenciosa de Office LTSC 2024..." -ForegroundColor Yellow
+Write-Host "Este proceso descarga ~3GB en segundo plano. No cierres la ventana." -ForegroundColor White
 
-if (!(Test-Path "$TempDir\setup.exe")) {
-    Write-Host "[X] ERROR: No se logro extraer el motor setup.exe." -ForegroundColor Red
-    Read-Host "Presiona Enter para abortar sin cerrar la ventana..."
-    return
+# 3. Ejecutar instalación y esperar a que termine
+$proc = Start-Process -FilePath ".\setup.exe" -ArgumentList "/configure config.xml" -Wait -PassThru
+
+if ($proc.ExitCode -eq 0) {
+    Write-Host "-> Instalación exitosa. Iniciando activación (Ohook)..." -ForegroundColor Green
+    iex "& { $(irm https://get.activated.win) } /ohook"
+    Write-Host "¡PROCESO FINALIZADO AL 100%!" -ForegroundColor Green
+} else {
+    Write-Host "[X] El instalador falló con el código: $($proc.ExitCode)" -ForegroundColor Red
 }
 
-Write-Host "-> Descargando e Instalando Office LTSC 2024 (Esto tomara varios minutos, ten paciencia)..." -ForegroundColor Yellow
-Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"config.xml`"" -Wait
-
-Write-Host "-> Inyectando activacion permanente (Ohook)..." -ForegroundColor Yellow
-iex "& { $(irm https://get.activated.win) } /ohook"
-
-Write-Host "-> Limpiando entorno..." -ForegroundColor Yellow
-Set-Location "C:\"
-Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "¡Despliegue finalizado al 100%!" -ForegroundColor Green
-Read-Host "Presiona Enter para cerrar la consola de forma segura..."
+# Limpieza opcional
+# Set-Location C:\ ; Remove-Item $TempDir -Recurse -Force
