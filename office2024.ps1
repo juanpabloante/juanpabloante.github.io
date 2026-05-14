@@ -1,4 +1,4 @@
-# --- Motor de Despliegue ProTech (Fase Final) ---
+# --- Motor de Despliegue ProTech (A Prueba de Fallos) ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
 
@@ -6,43 +6,39 @@ $TempDir = "C:\OfficeLab2024"
 if (!(Test-Path $TempDir)) { New-Item -Path $TempDir -ItemType Directory -Force | Out-Null }
 Set-Location $TempDir
 
-# Enlace corporativo oficial y XML en vivo
 $OdtUrl = "https://go.microsoft.com/fwlink/p/?LinkID=626065"
 $XmlUrl = "https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main/config2024.xml"
-$OdtExe = "$TempDir\odt.exe"
-$XmlFile = "$TempDir\config.xml"
 
-Write-Host "-> Descargando Office Deployment Tool Oficial..." -ForegroundColor Cyan
-# Evasión de bloqueo usando un UserAgent de navegador real
-Invoke-WebRequest -Uri $OdtUrl -OutFile $OdtExe -UseBasicParsing -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-Invoke-WebRequest -Uri $XmlUrl -OutFile $XmlFile -UseBasicParsing
+Write-Host "-> Descargando herramientas de despliegue Microsoft..." -ForegroundColor Cyan
+# Usamos curl nativo de Windows con seguimiento de redirecciones y evasión de certificados
+curl.exe -s -L -A "Mozilla/5.0" --ssl-no-revoke -o odt.exe $OdtUrl
+curl.exe -s -L -A "Mozilla/5.0" --ssl-no-revoke -o config.xml $XmlUrl
 
-# Liberar bloqueos de seguridad nativos de Windows LTSC (SmartScreen)
-Unblock-File -Path $OdtExe
-Unblock-File -Path $XmlFile
-
-# Control de Integridad: Verificar que Microsoft entregó el ejecutable real (Aprox 3.5 MB)
-if ((Get-Item $OdtExe).Length -lt 1000000) {
-    Write-Host "[X] ERROR FATAL: Microsoft bloqueo la descarga. El archivo esta corrupto o vacio." -ForegroundColor Red
-    exit
+# Control de Integridad con Pausa (No cerrará la ventana)
+if ((Get-Item "odt.exe").Length -lt 1000000) {
+    Write-Host "[X] ERROR: Microsoft bloqueo la descarga (Tamano descargado: $((Get-Item 'odt.exe').Length) bytes)." -ForegroundColor Red
+    Read-Host "Presiona Enter para abortar sin cerrar la ventana..."
+    return
 }
 
 Write-Host "-> Extrayendo instalador base..." -ForegroundColor Yellow
-Start-Process -FilePath $OdtExe -ArgumentList "/extract:`"$TempDir`" /quiet" -Wait
+Start-Process -FilePath ".\odt.exe" -ArgumentList "/extract:`"$TempDir`" /quiet" -Wait
 
 if (!(Test-Path "$TempDir\setup.exe")) {
-    Write-Host "[X] ERROR FATAL: El motor setup.exe no se logro extraer." -ForegroundColor Red
-    exit
+    Write-Host "[X] ERROR: No se logro extraer el motor setup.exe." -ForegroundColor Red
+    Read-Host "Presiona Enter para abortar sin cerrar la ventana..."
+    return
 }
 
-Write-Host "-> Descargando e Instalando Office LTSC 2024 (Esto tomara varios minutos, no cierres la ventana)..." -ForegroundColor Yellow
-Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"$XmlFile`"" -Wait
+Write-Host "-> Descargando e Instalando Office LTSC 2024 (Esto tomara varios minutos, ten paciencia)..." -ForegroundColor Yellow
+Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"config.xml`"" -Wait
 
 Write-Host "-> Inyectando activacion permanente (Ohook)..." -ForegroundColor Yellow
 iex "& { $(irm https://get.activated.win) } /ohook"
 
-Write-Host "-> Limpiando entorno de laboratorio..." -ForegroundColor Yellow
+Write-Host "-> Limpiando entorno..." -ForegroundColor Yellow
 Set-Location "C:\"
 Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host "¡Despliegue automatizado finalizado al 100% sin errores!" -ForegroundColor Green
+Write-Host "¡Despliegue finalizado al 100%!" -ForegroundColor Green
+Read-Host "Presiona Enter para cerrar la consola de forma segura..."
