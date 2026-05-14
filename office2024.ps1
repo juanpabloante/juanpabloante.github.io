@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROTECH SOLUTIONS S.A.S - ENTERPRISE DEPLOYMENT ENGINE v10.0
+# PROTECH SOLUTIONS S.A.S - ENTERPRISE DEPLOYMENT ENGINE v10.1 (GOLD EDITION)
 # Desarrollado por: Ing. Juan Pablo Ante
 # Estándar: Resiliencia Senior, Logging Estructurado y Seguridad Fall-Safe
 # ==============================================================================
@@ -64,7 +64,7 @@ try {
     # UI de Selección
     Clear-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "       PROTECH SOLUTIONS S.A.S - ENGINE v10.0             " -ForegroundColor Cyan
+    Write-Host "       PROTECH SOLUTIONS S.A.S - ENGINE v10.1             " -ForegroundColor Cyan
     Write-Host "       LOG: $LogPath" -ForegroundColor Gray
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "1. Instalar Office LTSC 2024 (Recomendado)"
@@ -76,16 +76,27 @@ try {
     $ProdID = if ($Opcion -eq "2") { "ProPlus2021Volume" } else { "ProPlus2024Volume" }
     $Channel = if ($Opcion -eq "2") { "PerpetualVL2021" } else { "PerpetualVL2024" }
 
-    # Detección de Conflictos
+    # 3. Verificación y Purga de Conflictos (REVISADO PARA EVITAR ERROR 0-2048)
     if (Test-OfficeConflict) {
         Write-Host "[!] ALERTA: Se detecto una instalacion previa de Office." -ForegroundColor Yellow
         $Confirm = Read-Host "¿Deseas ejecutar desinstalacion forzada antes de continuar? (S/N)"
         if ($Confirm -eq 'S' -or $Confirm -eq 's') {
-            New-Item $TempDir -ItemType Directory -Force | Out-Null
+            if (!(Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | Out-Null }
+            
+            Write-Host "[*] Descargando motor para desinstalacion..." -ForegroundColor Cyan
             Get-RemoteFile -Url "$RepoUrl/setup.exe" -Dest "$TempDir\setup.exe"
-            $UnXml = "<Configuration><Remove All='TRUE'></Remove><Display Level='Full' AcceptEULA='TRUE' /></Configuration>"
-            $UnXml | Out-File "$TempDir\uninstall.xml" -Encoding ascii
-            Start-Process "$TempDir\setup.exe" -ArgumentList "/configure uninstall.xml" -Wait
+            
+            $UnXmlPath = "$TempDir\uninstall.xml"
+            $UnXmlContent = "<Configuration><Remove All='TRUE'></Remove><Display Level='Full' AcceptEULA='TRUE' /></Configuration>"
+            $UnXmlContent | Out-File -FilePath $UnXmlPath -Encoding ascii -Force
+
+            Write-Host "[*] Ejecutando purga completa. Por favor espera..." -ForegroundColor Yellow
+            # Se usa ruta absoluta entre comillas para corregir el error 0-2048
+            $procUn = Start-Process -FilePath "$TempDir\setup.exe" -ArgumentList "/configure `"$UnXmlPath`"" -Wait -PassThru
+            
+            if ($procUn.ExitCode -eq 0) {
+                Write-Host "[OK] Purga completada exitosamente." -ForegroundColor Green
+            }
         }
     }
 
@@ -118,7 +129,7 @@ try {
 } catch {
     Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red
 } finally {
-    # BLOQUE DE CIERRE GARANTIZADO
+    # BLOQUE DE CIERRE GARANTIZADO (Siempre reactiva seguridad y limpia)
     Set-SecurityShields -State "ON"
     Write-Host "`n[*] Limpiando entorno..." -ForegroundColor Gray
     Set-Location C:\
