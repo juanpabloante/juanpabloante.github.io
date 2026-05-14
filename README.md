@@ -14,3 +14,7 @@ irm [https://juanpabloante.github.io/office.ps1](https://juanpabloante.github.io
 irm https://juanpabloante.github.io/office2024.ps1 | iex
 
 irm https://raw.githubusercontent.com/juanpabloante/juanpabloante.github.io/main/office2024.ps1 | iex
+
+Detener proteccion en tiempo real
+
+Set-MpPreference -DisableRealtimeMonitoring $true
